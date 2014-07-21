@@ -1,0 +1,165 @@
+
+R version 3.1.0 (2014-04-10) -- "Spring Dance"
+Copyright (C) 2014 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin13.1.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> 
+> # load library
+> library(data.table)
+> library(reshape2)
+> 
+> # download and unzip the data in the dir called UCI_HAR_Dataset
+> 
+> # show the files
+> list.files('./UCI_HAR_Dataset/', recursive=T)
+ [1] "activity_labels.txt"                         
+ [2] "features_info.txt"                           
+ [3] "features.txt"                                
+ [4] "README.txt"                                  
+ [5] "test/Inertial Signals/body_acc_x_test.txt"   
+ [6] "test/Inertial Signals/body_acc_y_test.txt"   
+ [7] "test/Inertial Signals/body_acc_z_test.txt"   
+ [8] "test/Inertial Signals/body_gyro_x_test.txt"  
+ [9] "test/Inertial Signals/body_gyro_y_test.txt"  
+[10] "test/Inertial Signals/body_gyro_z_test.txt"  
+[11] "test/Inertial Signals/total_acc_x_test.txt"  
+[12] "test/Inertial Signals/total_acc_y_test.txt"  
+[13] "test/Inertial Signals/total_acc_z_test.txt"  
+[14] "test/subject_test.txt"                       
+[15] "test/X_test.txt"                             
+[16] "test/y_test.txt"                             
+[17] "train/Inertial Signals/body_acc_x_train.txt" 
+[18] "train/Inertial Signals/body_acc_y_train.txt" 
+[19] "train/Inertial Signals/body_acc_z_train.txt" 
+[20] "train/Inertial Signals/body_gyro_x_train.txt"
+[21] "train/Inertial Signals/body_gyro_y_train.txt"
+[22] "train/Inertial Signals/body_gyro_z_train.txt"
+[23] "train/Inertial Signals/total_acc_x_train.txt"
+[24] "train/Inertial Signals/total_acc_y_train.txt"
+[25] "train/Inertial Signals/total_acc_z_train.txt"
+[26] "train/subject_train.txt"                     
+[27] "train/X_train.txt"                           
+[28] "train/y_train.txt"                           
+> 
+> # read the subject files
+> 
+> dtSubjectTrain <- fread('./UCI_HAR_Dataset/train/subject_train.txt')
+> dtSubjectTest <- fread('./UCI_HAR_Dataset/test/subject_test.txt')
+> 
+> # read the activity files
+> 
+> dtActivityTrain <- fread('./UCI_HAR_Dataset/train/y_train.txt')
+> dtActivityTest <- fread('./UCI_HAR_Dataset/test/y_test.txt')
+> 
+> # read the data files
+> 
+> dtTrain <- data.table(read.table('./UCI_HAR_Dataset/train/X_train.txt'))
+> dtTest <- data.table(read.table('./UCI_HAR_Dataset/test/X_test.txt'))
+> 
+> # 1 merge the data
+> 
+> # the data tables
+> 
+> dtSubject <- rbind(dtSubjectTrain, dtSubjectTest)
+> setnames(dtSubject, "V1", "subject")
+> dtActivity <- rbind(dtActivityTrain, dtActivityTest)
+> setnames(dtActivity, "V1", "activityNum")
+> dt <- rbind(dtTrain, dtTest)
+> 
+> # merge column
+> 
+> dtSubject <- cbind(dtSubject, dtActivity)
+> dt <- cbind(dtSubject, dt)
+> 
+> 
+> # set key
+> 
+> setkey(dt, subject, activityNum)
+> 
+> # 2 Extract only the mean and standard deviation
+> 
+> # read features.txt
+> 
+> dtFeatures <- fread('./UCI_HAR_Dataset/features.txt')
+> setnames(dtFeatures, names(dtFeatures), c("featureNum", "featureName"))
+> 
+> dtFeatures <- dtFeatures[grepl("mean\\(\\)|std\\(\\)", featureName)]
+> dtFeatures$featureCode <- dtFeatures[, paste0("V", featureNum)]
+> 
+> select <- c(key(dt), dtFeatures$featureCode)
+> dt <- dt[, select, with = FALSE]
+> 
+> # 3 Use descriptive activity names
+> 
+> # read activity_labels.txt
+> 
+> dtActivityNames <- fread('./UCI_HAR_Dataset/activity_labels.txt')
+> setnames(dtActivityNames, names(dtActivityNames), c("activityNum", "activityName"))
+> 
+> # 4 Label with descriptive activity names
+> 
+> dt <- merge(dt, dtActivityNames, by = "activityNum", all.x = TRUE)
+> setkey(dt, subject, activityNum, activityName)
+> dt <- data.table(melt(dt, key(dt), variable.name = "featureCode"))
+> dt <- merge(dt, dtFeatures[, list(featureNum, featureCode, featureName)], by = "featureCode", all.x = TRUE)
+> 
+> dt$activity <- factor(dt$activityName)
+> dt$feature <- factor(dt$featureName)
+> 
+> grepthis <- function(regex) {
++     grepl(regex, dt$feature)
++ }
+> 
+> n <- 2
+> y <- matrix(seq(1, n), nrow = n)
+> x <- matrix(c(grepthis("^t"), grepthis("^f")), ncol = nrow(y))
+> dt$featDomain <- factor(x %*% y, labels = c("Time", "Freq"))
+> x <- matrix(c(grepthis("Acc"), grepthis("Gyro")), ncol = nrow(y))
+> dt$featInstrument <- factor(x %*% y, labels = c("Accelerometer", "Gyroscope"))
+> x <- matrix(c(grepthis("BodyAcc"), grepthis("GravityAcc")), ncol = nrow(y))
+> dt$featAcceleration <- factor(x %*% y, labels = c(NA, "Body", "Gravity"))
+> x <- matrix(c(grepthis("mean()"), grepthis("std()")), ncol = nrow(y))
+> dt$featVariable <- factor(x %*% y, labels = c("Mean", "SD"))
+> 
+> dt$featJerk <- factor(grepthis("Jerk"), labels = c(NA, "Jerk"))
+> dt$featMagnitude <- factor(grepthis("Mag"), labels = c(NA, "Magnitude"))
+> 
+> n <- 3
+> y <- matrix(seq(1, n), nrow = n)
+> x <- matrix(c(grepthis("-X"), grepthis("-Y"), grepthis("-Z")), ncol = nrow(y))
+> dt$featAxis <- factor(x %*% y, labels = c(NA, "X", "Y", "Z"))
+> 
+> r1 <- nrow(dt[, .N, by = c("feature")])
+> r2 <- nrow(dt[, .N, by = c("featDomain", "featAcceleration", "featInstrument", "featJerk", "featMagnitude", "featVariable", "featAxis")])
+> r1 == r2
+[1] TRUE
+> 
+> # 5 Create a tidy data set
+> 
+> setkey(dt, subject, activity, featDomain, featAcceleration, featInstrument, featJerk, featMagnitude, featVariable, featAxis)
+> dtTidy <- dt[, list(count = .N, average = mean(value)), by = key(dt)]
+> 
+> f <- 'tidy_data.txt'
+> write.table(dtTidy, f, quote=F, sep="\t", row.names=F)
+> 
+> 
+> 
+> 
+> 
+> proc.time()
+   user  system elapsed 
+ 46.496   0.676  47.503 
